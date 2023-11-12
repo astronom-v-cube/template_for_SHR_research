@@ -107,8 +107,9 @@ class ResponseCanvas(FigureCanvas):
 #        self.draw()
         
     def imshow(self, array, arrayMin, arrayMax):
-        # self.imageObject = self.subplot.imshow(array, cmap=self.cmap, origin='lower', norm = mcolors.TwoSlopeNorm(vmin=2000, vcenter=250000, vmax=900000))
-        self.imageObject = self.subplot.imshow(array, cmap=my_cmap, origin='lower', norm = mcolors.TwoSlopeNorm(vmin=0, vcenter=500000, vmax=2000000))
+        self.imageObject = self.subplot.imshow(array, vmin = 0, vmax = arrayMax, cmap=self.cmap, origin='lower')
+        # self.imageObject = self.subplot.imshow(array, cmap=self.cmap, origin='lower', norm = mcolors.TwoSlopeNorm(vmin=0, vcenter=25000, vmax=2000000))
+        # self.imageObject = self.subplot.imshow(array, cmap=my_cmap, origin='lower', norm = mcolors.TwoSlopeNorm(vmin=0, vcenter=500000, vmax=2000000))
         self.draw()
 
     def contour(self, array, levels):
@@ -625,10 +626,11 @@ class SrhEdik36(QtWidgets.QMainWindow):#MainWindow):
             self.showImage()
             
     def onTypeOfPlot(self, index):
-        self.indexOfPlotType = index
-        if (self.imageUpdate):
-            self.buildImage()
-            self.showImage()
+        pass
+        # self.indexOfPlotType = index
+        # if (self.imageUpdate):
+        #     self.buildImage()
+        #     self.showImage()
 
     def onBinsChanged(self, value):
         self.bins = value
@@ -1529,8 +1531,8 @@ class SrhEdik36(QtWidgets.QMainWindow):#MainWindow):
         self.srhWidget.layout.addWidget(self.rcpTextBox,1,1)
         self.srhWidget.layout.addWidget(self.lcpCanvas,4,0)
         self.srhWidget.layout.addWidget(self.rcpCanvas,4,1)
-        self.srhWidget.layout.addWidget(self.lcpMaxCanvas,14,0,5,1)
-        self.srhWidget.layout.addWidget(self.rcpMaxCanvas,14,1,5,1)
+        # self.srhWidget.layout.addWidget(self.lcpMaxCanvas,14,0,5,1)
+        # self.srhWidget.layout.addWidget(self.rcpMaxCanvas,14,1,5,1)
         self.srhWidget.setLayout(self.srhWidget.layout)
         
         self.casaWidget= QtWidgets.QWidget()
@@ -1691,8 +1693,8 @@ class SrhEdik36(QtWidgets.QMainWindow):#MainWindow):
         self.tab10.setLayout(self.tab10.layout)
         
         
-        self.lcpCanvas.setMinimumSize(500,500)
-        self.rcpCanvas.setMinimumSize(500,500)
+        self.lcpCanvas.setMinimumSize(675,675)
+        self.rcpCanvas.setMinimumSize(675,675)
         self.casaLeftCanvas.setMinimumSize(500,500)
         self.casaRightCanvas.setMinimumSize(500,500)
         layout.addWidget(self.tabs,0,0,1,2)

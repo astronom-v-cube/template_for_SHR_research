@@ -105,7 +105,7 @@ class ResponseCanvas(FigureCanvas):
 #        self.draw()
         
     def imshow(self, array, arrayMin, arrayMax):
-        self.imageObject = self.subplot.imshow(array, vmin = arrayMin, vmax = arrayMax, cmap=self.cmap, origin='lower')
+        self.imageObject = self.subplot.imshow(array, vmin = 0, vmax = arrayMax, cmap=self.cmap, origin='lower')
         self.draw()
 
     def contour(self, array, levels):
@@ -627,10 +627,11 @@ class SrhEdik612(QtWidgets.QMainWindow):#MainWindow):
             self.showImage()
             
     def onTypeOfPlot(self, index):
-        self.indexOfPlotType = index
-        if (self.imageUpdate):
-            self.buildImage()
-            self.showImage()
+        pass
+        # self.indexOfPlotType = index
+        # if (self.imageUpdate):
+        #     self.buildImage()
+        #     self.showImage()
 
     def onBinsChanged(self, value):
         self.bins = value
@@ -1567,8 +1568,8 @@ class SrhEdik612(QtWidgets.QMainWindow):#MainWindow):
         self.srhWidget.layout.addWidget(self.rcpTextBox,1,1)
         self.srhWidget.layout.addWidget(self.lcpCanvas,4,0)
         self.srhWidget.layout.addWidget(self.rcpCanvas,4,1)
-        self.srhWidget.layout.addWidget(self.lcpMaxCanvas,14,0,5,1)
-        self.srhWidget.layout.addWidget(self.rcpMaxCanvas,14,1,5,1)
+        # self.srhWidget.layout.addWidget(self.lcpMaxCanvas,14,0,5,1)
+        # self.srhWidget.layout.addWidget(self.rcpMaxCanvas,14,1,5,1)
         self.srhWidget.setLayout(self.srhWidget.layout)
         
         self.casaWidget= QtWidgets.QWidget()
@@ -1735,8 +1736,8 @@ class SrhEdik612(QtWidgets.QMainWindow):#MainWindow):
         self.tab11.setLayout(self.tab11.layout)
         
         
-        self.lcpCanvas.setMinimumSize(500,500)
-        self.rcpCanvas.setMinimumSize(500,500)
+        self.lcpCanvas.setMinimumSize(675,675)
+        self.rcpCanvas.setMinimumSize(675,675)
         self.casaLeftCanvas.setMinimumSize(500,500)
         self.casaRightCanvas.setMinimumSize(500,500)
         layout.addWidget(self.tabs,0,0,1,2)
