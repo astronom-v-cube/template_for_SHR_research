@@ -20,6 +20,8 @@ from ZirinTb import ZirinTb
 import json
 import scipy.constants
 import skimage.measure
+from pathlib import Path
+from threadpoolctl import threadpool_limits
 
 class SrhFitsFile():
     def __init__(self, name, sizeOfUv, flux_norm = True):
@@ -81,6 +83,8 @@ class SrhFitsFile():
                 self.freqListLength = self.freqList.size;
                 self.dataLength = self.hduList[1].data['time'].size // self.freqListLength;
                 self.freqTime = self.hduList[1].data['time']
+                self.validScansLcp = NP.ones((self.freqListLength,self.dataLength), dtype = bool)
+                self.validScansRcp = NP.ones((self.freqListLength,self.dataLength), dtype = bool)
                 try:
                     self.freqTimeLcp = self.hduList[1].data['time_lcp']
                     self.freqTimeRcp = self.hduList[1].data['time_rcp']
@@ -97,13 +101,55 @@ class SrhFitsFile():
                 self.ampLcp = self.ampLcp.astype(float) / ampScale
                 self.ampRcp = self.ampRcp.astype(float) / ampScale
                 try:
-                    self.ampLcp_c = NP.reshape(self.hduList[1].data['amp_c_lcp'],(self.freqListLength,self.dataLength,self.antennaNumbers.size));
-                    self.ampRcp_c = NP.reshape(self.hduList[1].data['amp_c_rcp'],(self.freqListLength,self.dataLength,self.antennaNumbers.size));
-                    # self.ampLcp_c = self.ampLcp_c.astype(float) / ampScale
-                    # self.ampRcp_c = self.ampRcp_c.astype(float) / ampScale
-                    self.corr_amp_exist = True
+                    self.correctSubpacketsNumber = int(self.hduList[0].header['SUBPACKS'])
+                    self.subpacketLcp = self.hduList[1].data['spacket_lcp']
+                    self.subpacketRcp = self.hduList[1].data['spacket_rcp']
+                    self.validScansLcp = self.subpacketLcp==self.correctSubpacketsNumber
+                    self.validScansRcp = self.subpacketRcp==self.correctSubpacketsNumber
+                    self.visLcp[~self.validScansLcp] = 0
+                    self.visRcp[~self.validScansRcp] = 0
+                    self.ampLcp[~self.validScansLcp] = 1
+                    self.ampRcp[~self.validScansRcp] = 1
                 except:
                     pass
+                
+                try:
+                    
+                    self.ampLcp_c = NP.reshape(self.hduList[1].data['amp_c_lcp'],(self.freqListLength,self.dataLength,self.antennaNumbers.size));
+                    self.ampRcp_c = NP.reshape(self.hduList[1].data['amp_c_rcp'],(self.freqListLength,self.dataLength,self.antennaNumbers.size));
+                    self.corr_amp_exist = True
+                    self.ampLcp_c[self.ampLcp_c <= 0.01] = 1e6
+                    self.ampRcp_c[self.ampRcp_c <= 0.01] = 1e6
+                    
+                    if flux_norm:
+                        file = Path(__file__).resolve()
+                        parent = str(file.parent)
+                        zerosFits = fits.open(parent + '/srh_0612_cp_zeros.fits')
+                        skyLcp = zerosFits[2].data['skyLcp_c']
+                        skyRcp = zerosFits[2].data['skyRcp_c']
+                        for tt in range(self.dataLength):
+                            self.ampLcp_c[:,tt,:] = self.ampLcp_c[:,tt,:] - skyLcp
+                            self.ampRcp_c[:,tt,:] = self.ampRcp_c[:,tt,:] - skyRcp
+                        
+                    self.ampLcp_c[self.ampLcp_c <= 1e5] = 1e8
+                    self.ampRcp_c[self.ampRcp_c <= 1e5] = 1e8
+                    self.visLcp = self.visLcp / ((NP.sqrt(self.ampLcp_c[:,:,self.antennaA] * self.ampLcp_c[:,:,self.antennaB])))
+                    self.visRcp = self.visRcp / ((NP.sqrt(self.ampRcp_c[:,:,self.antennaA] * self.ampRcp_c[:,:,self.antennaB])))
+                except Exception as error:
+                    print('Visibilities are not corrected:   ', error)
+            
+                # try:
+                #     self.ampLcp_c = NP.reshape(self.hduList[1].data['amp_c_lcp'],(self.freqListLength,self.dataLength,self.antennaNumbers.size));
+                #     self.ampRcp_c = NP.reshape(self.hduList[1].data['amp_c_rcp'],(self.freqListLength,self.dataLength,self.antennaNumbers.size));
+                #     # self.ampLcp_c = self.ampLcp_c.astype(float) / ampScale
+                #     # self.ampRcp_c = self.ampRcp_c.astype(float) / ampScale
+                #     self.corr_amp_exist = True
+                #     self.ampLcp_c[self.ampLcp_c <= 0.01] = 1e6
+                #     self.ampRcp_c[self.ampRcp_c <= 0.01] = 1e6
+                #     self.visLcp = self.visLcp / ((NP.sqrt(self.ampLcp_c[:,:,self.antennaA] * self.ampLcp_c[:,:,self.antennaB])))
+                #     self.visRcp = self.visRcp / ((NP.sqrt(self.ampRcp_c[:,:,self.antennaA] * self.ampRcp_c[:,:,self.antennaB])))
+                # except:
+                #     pass
                 
                 self.RAO = BadaryRAO(self.dateObs.split('T')[0], 4.9, observedObject = self.obsObject)
                 self.pAngle = NP.deg2rad(sunpy.coordinates.sun.P(self.dateObs).to_value())
@@ -162,12 +208,12 @@ class SrhFitsFile():
                 
         if len(fitsNames) > 1:
             for fitsName in fitsNames[1:]:
-                self.append(fitsName)
+                self.append(fitsName, flux_norm)
         if flux_norm and self.corr_amp_exist:
             self.normalizeFlux()
-        self.beam()
+            self.beam()
     
-    def append(self,name):
+    def append(self, name, flux_norm):
         try:
             hduList = fits.open(name);
             freqTime = hduList[1].data['time']
@@ -181,21 +227,73 @@ class SrhFitsFile():
             ampScale = float(self.hduList[0].header['VIS_MAX']) / 128.
             ampLcp = ampLcp.astype(float) / ampScale
             ampRcp = ampRcp.astype(float) / ampScale
+            validScansLcp = NP.ones((self.freqListLength, dataLength), dtype = bool)
+            validScansRcp = NP.ones((self.freqListLength, dataLength), dtype = bool)
+            self.freqTime = NP.concatenate((self.freqTime, freqTime), axis = 1)
+            try:
+                subpacketLcp = self.hduList[1].data['spacket_lcp']
+                subpacketRcp = self.hduList[1].data['spacket_rcp']
+                self.subpacketLcp = NP.concatenate((self.subpacketLcp, subpacketLcp), axis = 1)
+                self.subpacketRcp = NP.concatenate((self.subpacketRcp, subpacketRcp), axis = 1)
+                validScansLcp = subpacketLcp==self.correctSubpacketsNumber
+                validScansRcp = subpacketRcp==self.correctSubpacketsNumber
+                visLcp[~validScansLcp] = 0
+                visRcp[~validScansRcp] = 0
+                ampLcp[~validScansLcp] = 1
+                ampRcp[~validScansRcp] = 1
+            except:
+                pass
+            
             try:
                 ampLcp_c = NP.reshape(hduList[1].data['amp_c_lcp'],(self.freqListLength,dataLength,self.antennaNumbers.size));
                 ampRcp_c = NP.reshape(hduList[1].data['amp_c_rcp'],(self.freqListLength,dataLength,self.antennaNumbers.size));
-                # ampLcp_c = ampLcp_c.astype(float) / ampScale
-                # ampRcp_c = ampRcp_c.astype(float) / ampScale
+                
+                if flux_norm:
+                    file = Path(__file__).resolve()
+                    parent = str(file.parent)
+                    zerosFits = fits.open(parent + '/srh_0612_cp_zeros.fits')
+                    skyLcp = zerosFits[2].data['skyLcp_c']
+                    skyRcp = zerosFits[2].data['skyRcp_c']
+                    for tt in range(dataLength):
+                        ampLcp_c[:,tt,:] = ampLcp_c[:,tt,:] - skyLcp
+                        ampRcp_c[:,tt,:] = ampRcp_c[:,tt,:] - skyRcp
+                        
+                ampLcp_c[ampLcp_c <= 1e5] = 1e8
+                ampRcp_c[ampRcp_c <= 1e5] = 1e8
+                visLcp = visLcp / ((NP.sqrt(ampLcp_c[:,:,self.antennaA] * ampLcp_c[:,:,self.antennaB])))
+                visRcp = visRcp / ((NP.sqrt(ampRcp_c[:,:,self.antennaA] * ampRcp_c[:,:,self.antennaB])))
                 self.ampLcp_c = NP.concatenate((self.ampLcp_c, ampLcp_c), axis = 1)
                 self.ampRcp_c = NP.concatenate((self.ampRcp_c, ampRcp_c), axis = 1)
+            except Exception as error:
+                print('Visibilities are not corrected:   ', error)
+            
+            # try:
+            #     ampLcp_c = NP.reshape(hduList[1].data['amp_c_lcp'],(self.freqListLength,dataLength,self.antennaNumbers.size));
+            #     ampRcp_c = NP.reshape(hduList[1].data['amp_c_rcp'],(self.freqListLength,dataLength,self.antennaNumbers.size));
+            #     # ampLcp_c = ampLcp_c.astype(float) / ampScale
+            #     # ampRcp_c = ampRcp_c.astype(float) / ampScale
+            #     ampLcp_c[ampLcp_c <= 0.01] = 1e6
+            #     ampRcp_c[ampRcp_c <= 0.01] = 1e6
+            #     visLcp = visLcp / ((NP.sqrt(ampLcp_c[:,:,self.antennaA] * ampLcp_c[:,:,self.antennaB])))
+            #     visRcp = visRcp / ((NP.sqrt(ampRcp_c[:,:,self.antennaA] * ampRcp_c[:,:,self.antennaB])))
+            #     self.ampLcp_c = NP.concatenate((self.ampLcp_c, ampLcp_c), axis = 1)
+            #     self.ampRcp_c = NP.concatenate((self.ampRcp_c, ampRcp_c), axis = 1)
+            # except:
+            #     pass
+            try:
+                freqTimeLcp = hduList[1].data['time_lcp']
+                freqTimeRcp = hduList[1].data['time_rcp']
+                self.freqTimeLcp = NP.concatenate((self.freqTimeLcp, freqTimeLcp), axis = 1)
+                self.freqTimeRcp = NP.concatenate((self.freqTimeRcp, freqTimeRcp), axis = 1)
             except:
                 pass
 
-            self.freqTime = NP.concatenate((self.freqTime, freqTime), axis = 1)
             self.visLcp = NP.concatenate((self.visLcp, visLcp), axis = 1)
             self.visRcp = NP.concatenate((self.visRcp, visRcp), axis = 1)
             self.ampLcp = NP.concatenate((self.ampLcp, ampLcp), axis = 1)
             self.ampRcp = NP.concatenate((self.ampRcp, ampRcp), axis = 1)
+            self.validScansLcp = NP.concatenate((self.validScansLcp, validScansLcp), axis = 1)
+            self.validScansRcp = NP.concatenate((self.validScansRcp, validScansRcp), axis = 1)
             self.dataLength += dataLength
             hduList.close()
 
@@ -203,38 +301,25 @@ class SrhFitsFile():
             print('File %s  not found'%name);
             
     def normalizeFlux(self):
-        zerosFits = fits.open('srh_0612_cp_zeros.fits')
-        corrZeros = zerosFits[2].data['corrI']
-        fluxZeros = zerosFits[2].data['fluxI']
+        file = Path(__file__).resolve()
+        parent = str(file.parent)
+        zerosFits = fits.open(parent + '/srh_0612_cp_zeros.fits')
+        # zerosFits = fits.open('srh_0612_cp_zeros.fits')
+        fluxZerosLcp = zerosFits[2].data['skyLcp']
+        fluxZerosRcp = zerosFits[2].data['skyRcp']
 
-        fluxNormFits = fits.open('srh_0612_cp_fluxNorm.fits')
-        fluxNormI = fluxNormFits[2].data['fluxNormI']
-        
-        # max_amp = float(self.hduList[0].header['VIS_MAX']) / 128.
-        
-        self.lcpSigmaCSrc = NP.sqrt(self.ampLcp_c)# * max_amp)
-        self.rcpSigmaCSrc = NP.sqrt(self.ampRcp_c)# * max_amp)
-        
-        self.rcpSigmaCSrc[self.rcpSigmaCSrc < 1000] = 1e6
-        self.lcpSigmaCSrc[self.lcpSigmaCSrc < 1000] = 1e6
-        
-        for vis in range(18336):
-            AB = self.visIndex2antIndex(vis)
-            self.visLcp[:,:,vis] = self.visLcp[:,:,vis] / (self.lcpSigmaCSrc[:,:,AB[0]] * self.lcpSigmaCSrc[:,:,AB[1]])
-            self.visRcp[:,:,vis] = self.visRcp[:,:,vis] / (self.rcpSigmaCSrc[:,:,AB[0]] * self.rcpSigmaCSrc[:,:,AB[1]])
-    
+        fluxNormFits = fits.open(parent + '/srh_0612_cp_fluxNorm.fits')
+        fluxNormLcp = fluxNormFits[2].data['fluxNormLcp']
+        fluxNormRcp = fluxNormFits[2].data['fluxNormRcp']
+
         ampFluxRcp = NP.mean(self.ampRcp, axis = 2)
         ampFluxLcp = NP.mean(self.ampLcp, axis = 2)
         
         for ff in range(self.freqListLength):
-            ampFluxRcp[ff,:] -= fluxZeros[ff]
-            ampFluxRcp[ff,:] *= fluxNormI[ff]
-            ampFluxLcp[ff,:] -= fluxZeros[ff]
-            ampFluxLcp[ff,:] *= fluxNormI[ff]
-            
-            # lam = scipy.constants.c/(self.freqList[ff]*1e3)
-            # self.tempLcp[ff] = NP.mean(ampFluxLcp[ff]) * lam**2 / (2*scipy.constants.k * self.beam_sr[ff])
-            # self.tempRcp[ff] = NP.mean(ampFluxRcp[ff]) * lam**2 / (2*scipy.constants.k * self.beam_sr[ff])
+            ampFluxRcp[ff,:] -= fluxZerosRcp[ff]
+            ampFluxRcp[ff,:] *= fluxNormRcp[ff] 
+            ampFluxLcp[ff,:] -= fluxZerosLcp[ff]
+            ampFluxLcp[ff,:] *= fluxNormLcp[ff] 
             
             self.fluxLcp[ff] = NP.mean(ampFluxLcp[ff])
             self.fluxRcp[ff] = NP.mean(ampFluxRcp[ff])
@@ -249,7 +334,7 @@ class SrhFitsFile():
             
     def beam(self):
         self.setFrequencyChannel(0)
-        self.vis2uv(0, PSF = True)
+        self.vis2uv(0, average= 20, PSF = True)
         self.uv2lmImage()
         self.lm2Heliocentric(image_scale = 2)
         arcsecPerPix = self.arcsecPerPixel / 2.
@@ -791,14 +876,18 @@ class SrhFitsFile():
             for i in range(antNumberEW - baseline):
                 redIndexesEW.append(NP.where((self.antennaA==i) & (self.antennaB==i+baseline))[0][0])
              
+        validScansBoth = NP.intersect1d(NP.where(self.validScansLcp[freqChannel]), NP.where(self.validScansRcp[freqChannel]))
+        ind = NP.argmin(NP.abs(validScansBoth - self.calibIndex))
+        calibIndex = validScansBoth[ind]   
+             
         if self.averageCalib:
-            redundantVisS = NP.mean(self.visLcp[freqChannel, :20, redIndexesS], axis = 1)
-            redundantVisEW = NP.mean(self.visLcp[freqChannel, :20, redIndexesEW], axis = 1)
+            redundantVisS = NP.sum(self.visLcp[freqChannel, :20, redIndexesS], axis = 1)/NP.sum(self.validScansLcp[freqChannel])
+            redundantVisEW = NP.sum(self.visLcp[freqChannel, :20, redIndexesEW], axis = 1)/NP.sum(self.validScansLcp[freqChannel])
             crossVis = NP.mean(self.visLcp[freqChannel, :20, 63],)
         else:
-            redundantVisS = self.visLcp[freqChannel, self.calibIndex, redIndexesS]
-            redundantVisEW = self.visLcp[freqChannel, self.calibIndex, redIndexesEW]
-            crossVis = self.visLcp[freqChannel, self.calibIndex, 63]
+            redundantVisS = self.visLcp[freqChannel, calibIndex, redIndexesS]
+            redundantVisEW = self.visLcp[freqChannel, calibIndex, redIndexesEW]
+            crossVis = self.visLcp[freqChannel, calibIndex, 63]
             
         for i in range(len(redIndexesS)):    
             if NP.any(self.flags_s == self.antennaA[redIndexesS[i]]) or NP.any(self.flags_s == self.antennaB[redIndexesS[i]]):
@@ -839,7 +928,8 @@ class SrhFitsFile():
                 ewSolVisNumber, sNum, ewNum, solVisArrayS, antAGainsS, antBGainsS, solVisArrayEW, 
                 antAGainsEW, antBGainsEW, ewSolVis, sSolVis, solVis, antAGains, antBGains, sAmpSign)
 
-        ls_res = least_squares(self.allGainsFunc_constrained_cross_new, self.x_ini_lcp[freqChannel], args = args, max_nfev = 400)
+        with threadpool_limits(limits=1, user_api='blas'):
+            ls_res = least_squares(self.allGainsFunc_constrained_cross_new, self.x_ini_lcp[freqChannel], args = args, max_nfev = 400)
         self.calibrationResultLcp[freqChannel] = ls_res['x']
         self.x_ini_lcp[freqChannel] = ls_res['x']
         gains = self.real_to_complex(ls_res['x'][1:-1])[(baselinesNumber-1)*2:]
@@ -867,14 +957,18 @@ class SrhFitsFile():
             for i in range(antNumberEW - baseline):
                 redIndexesEW.append(NP.where((self.antennaA==i) & (self.antennaB==i+baseline))[0][0])
              
+        validScansBoth = NP.intersect1d(NP.where(self.validScansLcp[freqChannel]), NP.where(self.validScansRcp[freqChannel]))
+        ind = NP.argmin(NP.abs(validScansBoth - self.calibIndex))
+        calibIndex = validScansBoth[ind]
+             
         if self.averageCalib:
-            redundantVisS = NP.mean(self.visRcp[freqChannel, :20, redIndexesS], axis = 1)
-            redundantVisEW = NP.mean(self.visRcp[freqChannel, :20, redIndexesEW], axis = 1)
+            redundantVisS = NP.sum(self.visRcp[freqChannel, :20, redIndexesS], axis = 1)/NP.sum(self.validScansRcp[freqChannel])
+            redundantVisEW = NP.sum(self.visRcp[freqChannel, :20, redIndexesEW], axis = 1)/NP.sum(self.validScansRcp[freqChannel])
             crossVis = NP.mean(self.visRcp[freqChannel, :20, 63],)
         else:
-            redundantVisS = self.visRcp[freqChannel, self.calibIndex, redIndexesS]
-            redundantVisEW = self.visRcp[freqChannel, self.calibIndex, redIndexesEW]
-            crossVis = self.visRcp[freqChannel, self.calibIndex, 63]
+            redundantVisS = self.visRcp[freqChannel, calibIndex, redIndexesS]
+            redundantVisEW = self.visRcp[freqChannel, calibIndex, redIndexesEW]
+            crossVis = self.visRcp[freqChannel, calibIndex, 63]
             
         for i in range(len(redIndexesS)):    
             if NP.any(self.flags_s == self.antennaA[redIndexesS[i]]) or NP.any(self.flags_s == self.antennaB[redIndexesS[i]]):
@@ -915,7 +1009,8 @@ class SrhFitsFile():
                 ewSolVisNumber, sNum, ewNum, solVisArrayS, antAGainsS, antBGainsS, solVisArrayEW, 
                 antAGainsEW, antBGainsEW, ewSolVis, sSolVis, solVis, antAGains, antBGains, sAmpSign)
 
-        ls_res = least_squares(self.allGainsFunc_constrained_cross_new, self.x_ini_lcp[freqChannel], args = args, max_nfev = 400)
+        with threadpool_limits(limits=1, user_api='blas'):
+            ls_res = least_squares(self.allGainsFunc_constrained_cross_new, self.x_ini_lcp[freqChannel], args = args, max_nfev = 400)
         self.calibrationResultRcp[freqChannel] = ls_res['x']
         self.x_ini_rcp[freqChannel] = ls_res['x']
         gains = self.real_to_complex(ls_res['x'][1:-1])[(baselinesNumber-1)*2:]
@@ -1283,8 +1378,8 @@ class SrhFitsFile():
             for i in range(self.antNumberS):
                 for j in range(self.antNumberEW):
                     if not (NP.any(self.flags_ew == j) or NP.any(self.flags_s == i)):
-                        self.uvLcp[O + i*2, O + (j-64)*2] = NP.mean(self.visLcp[self.frequencyChannel, firstScan:lastScan, i*128+j])
-                        self.uvRcp[O + i*2, O + (j-64)*2] = NP.mean(self.visRcp[self.frequencyChannel, firstScan:lastScan, i*128+j])
+                        self.uvLcp[O + i*2, O + (j-64)*2] = NP.sum(self.visLcp[self.frequencyChannel, firstScan:lastScan, i*128+j])/NP.sum(self.validScansLcp[self.frequencyChannel][firstScan:lastScan])
+                        self.uvRcp[O + i*2, O + (j-64)*2] = NP.sum(self.visRcp[self.frequencyChannel, firstScan:lastScan, i*128+j])/NP.sum(self.validScansRcp[self.frequencyChannel][firstScan:lastScan])
                         if (phaseCorrect):
                             ewPh = self.ewAntPhaLcp[self.frequencyChannel, j]+self.ewLcpPhaseCorrection[self.frequencyChannel, j]
                             sPh = self.sAntPhaLcp[self.frequencyChannel, i]+self.sLcpPhaseCorrection[self.frequencyChannel, i]
@@ -1329,8 +1424,10 @@ class SrhFitsFile():
 
         self.uvLcp[NP.abs(self.uvLcp)<1e-6] = 0.
         self.uvRcp[NP.abs(self.uvRcp)<1e-6] = 0.
-        self.uvLcp /= NP.count_nonzero(self.uvLcp)
-        self.uvRcp /= NP.count_nonzero(self.uvRcp)
+        if NP.count_nonzero(self.uvLcp):
+            self.uvLcp /= NP.count_nonzero(self.uvLcp)
+        if NP.count_nonzero(self.uvRcp):
+            self.uvRcp /= NP.count_nonzero(self.uvRcp)
         
         
         # self.uvLcp /= self.convolutionNormCoef
@@ -1348,6 +1445,48 @@ class SrhFitsFile():
             lam = scipy.constants.c/(self.freqList[self.frequencyChannel]*1e3)
             self.lcp = self.lcp * lam**2 * 1e-22 / (2*scipy.constants.k * self.beam_sr[self.frequencyChannel])
             self.rcp = self.rcp * lam**2 * 1e-22 / (2*scipy.constants.k * self.beam_sr[self.frequencyChannel])
+            
+    def makeReducedImage(self, scan, phaseCorrect = True, amplitudeCorrect = True, PSF=False, average = 20):
+        self.uvLcp_reduced = NP.zeros((self.sizeOfUv,self.sizeOfUv),dtype=complex);
+        self.uvRcp_reduced = NP.zeros((self.sizeOfUv,self.sizeOfUv),dtype=complex);
+
+        O = self.sizeOfUv//2 + 1
+        if average:
+            firstScan = scan
+            if  self.visLcp.shape[1] < (scan + average):
+                lastScan = self.dataLength
+            else:
+                lastScan = scan + average
+            for i in range(5):
+                for j in range(59,69):
+                    if not (NP.any(self.flags_ew == j) or NP.any(self.flags_s == i)):
+                        self.uvLcp_reduced[O + i*2, O + (j-64)*2] = NP.mean(self.visLcp[self.frequencyChannel, firstScan:lastScan, i*128+j])
+                        self.uvRcp_reduced[O + i*2, O + (j-64)*2] = NP.mean(self.visRcp[self.frequencyChannel, firstScan:lastScan, i*128+j])
+                        if (phaseCorrect):
+                            ewPh = self.ewAntPhaLcp[self.frequencyChannel, j]+self.ewLcpPhaseCorrection[self.frequencyChannel, j]
+                            sPh = self.sAntPhaLcp[self.frequencyChannel, i]+self.sLcpPhaseCorrection[self.frequencyChannel, i]
+                            self.uvLcp_reduced[O + i*2, O + (j-64)*2] *= NP.exp(1j * (-ewPh + sPh))
+                            ewPh = self.ewAntPhaRcp[self.frequencyChannel, j]+self.ewRcpPhaseCorrection[self.frequencyChannel, j]
+                            sPh = self.sAntPhaRcp[self.frequencyChannel, i]+self.sRcpPhaseCorrection[self.frequencyChannel, i]
+                            self.uvRcp_reduced[O + i*2, O + (j-64)*2] *= NP.exp(1j * (-ewPh + sPh))
+                        if (amplitudeCorrect):
+                            self.uvLcp_reduced[O + i*2, O + (j-64)*2] /= (self.ewAntAmpLcp[self.frequencyChannel, j] * self.sAntAmpLcp[self.frequencyChannel, i])
+                            self.uvRcp_reduced[O + i*2, O + (j-64)*2] /= (self.ewAntAmpRcp[self.frequencyChannel, j] * self.sAntAmpRcp[self.frequencyChannel, i])
+                        self.uvLcp_reduced[O - (i+1)*2, O - (j-63)*2] = NP.conj(self.uvLcp_reduced[O + i*2, O + (j-64)*2])
+                        self.uvRcp_reduced[O - (i+1)*2, O - (j-63)*2] = NP.conj(self.uvRcp_reduced[O + i*2, O + (j-64)*2])
+        # self.uvLcp_reduced[NP.abs(self.uvLcp_reduced)<1e-6] = 0.
+        # self.uvRcp_reduced[NP.abs(self.uvRcp_reduced)<1e-6] = 0.
+        # self.uvLcp_reduced /= NP.count_nonzero(self.uvLcp_reduced)
+        # self.uvRcp_reduced /= NP.count_nonzero(self.uvRcp_reduced)
+
+        self.lcp_reduced = NP.fft.fft2(NP.roll(NP.roll(self.uvLcp_reduced,self.sizeOfUv//2,0),self.sizeOfUv//2,1));
+        self.lcp_reduced = NP.roll(NP.roll(self.lcp_reduced,self.sizeOfUv//2,0),self.sizeOfUv//2,1);
+        self.rcp_reduced = NP.fft.fft2(NP.roll(NP.roll(self.uvRcp_reduced,self.sizeOfUv//2,0),self.sizeOfUv//2,1));
+        self.rcp_reduced = NP.roll(NP.roll(self.rcp_reduced,self.sizeOfUv//2,0),self.sizeOfUv//2,1);
+        if self.flux_calibrated:
+            lam = scipy.constants.c/(self.freqList[self.frequencyChannel]*1e3)
+            self.lcp_reduced = self.lcp_reduced * lam**2 * 1e-22 / (2*scipy.constants.k * self.beam_sr[self.frequencyChannel])
+            self.rcp_reduced = self.rcp_reduced * lam**2 * 1e-22 / (2*scipy.constants.k * self.beam_sr[self.frequencyChannel])
         
     def lm2Heliocentric(self, image_scale = 0.5):
         scaling = self.getPQScale(self.sizeOfUv, NP.deg2rad(self.arcsecPerPixel * (self.sizeOfUv - 1)/3600.)/image_scale)
@@ -1392,6 +1531,13 @@ class SrhFitsFile():
     def resetDelays(self):
         self.nDelays = NP.zeros((self.antNumberN, self.dataLength))
         self.ewDelays = NP.zeros((self.antNumberEW, self.dataLength))
+        
+    def wrap(self, value):
+        while value<-180:
+            value+=360
+        while value>180:
+            value-=360
+        return value
         
     def createDisk(self, radius, arcsecPerPixel = 2.45552):
         qSun = NP.zeros((self.sizeOfUv, self.sizeOfUv))
@@ -1502,118 +1648,211 @@ class SrhFitsFile():
         return self.complex_to_real(diff[self.uvUniform!=0])
     
     def findDisk(self):
-        self.createDisk(980)
-        self.createUvUniform()
-        x_ini = [1,0,0]
-        ls_res = least_squares(self.diskDiff, x_ini, args = (0,))
-        self.diskLevelLcp, self.ewSlopeLcp, self.sSlopeLcp = ls_res['x']
-        ls_res = least_squares(self.diskDiff, x_ini, args = (1,))
-        self.diskLevelRcp, self.ewSlopeRcp, self.sSlopeRcp = ls_res['x']
-        
-    def wrap(self, value):
-        while value<-180:
-            value+=360
-        while value>180:
-            value-=360
-        return value
+        with threadpool_limits(limits=1, user_api='blas'):
+            self.createDisk(980)
+            self.createUvUniform()
+            Tb = self.ZirinQSunTb.getTbAtFrequency(self.freqList[self.frequencyChannel]*1e-6) * 1e3
+            x_ini = [Tb/self.convolutionNormCoef,0,0]
+            ls_res = least_squares(self.diskDiff, x_ini, args = (0,))
+            _diskLevelLcp, _ewSlopeLcp, _sSlopeLcp = ls_res['x']
+            ls_res = least_squares(self.diskDiff, x_ini, args = (1,))
+            _diskLevelRcp, _ewSlopeRcp, _sSlopeRcp = ls_res['x']
+           
+            if _diskLevelLcp<0:
+                self.sLcpStair[self.frequencyChannel] = self.wrap(self.sLcpStair[self.frequencyChannel] + 180)
+                _diskLevelLcp *= -1
+            if _diskLevelRcp<0:
+                self.sRcpStair[self.frequencyChannel] = self.wrap(self.sRcpStair[self.frequencyChannel] + 180)
+                _diskLevelRcp *= -1
+                
+            if not self.corr_amp_exist:
+                self.diskLevelLcp[self.frequencyChannel] = _diskLevelLcp
+                self.diskLevelRcp[self.frequencyChannel] = _diskLevelRcp
+                self.ewAntAmpLcp[self.frequencyChannel][self.ewAntAmpLcp[self.frequencyChannel]!=1e6] *= NP.sqrt(_diskLevelLcp*self.convolutionNormCoef / Tb)
+                self.sAntAmpLcp[self.frequencyChannel][self.sAntAmpLcp[self.frequencyChannel]!=1e6] *= NP.sqrt(_diskLevelLcp*self.convolutionNormCoef / Tb)
+                self.ewAntAmpRcp[self.frequencyChannel][self.ewAntAmpRcp[self.frequencyChannel]!=1e6] *= NP.sqrt(_diskLevelRcp*self.convolutionNormCoef / Tb)
+                self.sAntAmpRcp[self.frequencyChannel][self.sAntAmpRcp[self.frequencyChannel]!=1e6] *= NP.sqrt(_diskLevelRcp*self.convolutionNormCoef / Tb)
+            
+            self.ewSlopeLcp[self.frequencyChannel] = self.wrap(self.ewSlopeLcp[self.frequencyChannel] + _ewSlopeLcp)
+            self.sSlopeLcp[self.frequencyChannel] = self.wrap(self.sSlopeLcp[self.frequencyChannel] + _sSlopeLcp)
+            self.ewSlopeRcp[self.frequencyChannel] = self.wrap(self.ewSlopeRcp[self.frequencyChannel] + _ewSlopeRcp)
+            self.sSlopeRcp[self.frequencyChannel] = self.wrap(self.sSlopeRcp[self.frequencyChannel] + _sSlopeRcp)
+            
+    
     
     def findDisk_stair(self):
-        self.createDisk(980)
-        self.createUvUniform()
-        
-        # if self.flux_calibrated:
-        #     Tb = self.ZirinQSunTb.getTbAtFrequency(self.freqList[self.frequencyChannel]*1e-6) * 1e3
-        #     x_ini = [0,0,0]
-        #     ls_res = least_squares(self.diskDiff_stair_fluxNorm, x_ini, args = (0,Tb/self.convolutionNormCoef), ftol=self.centering_ftol)
-        #     # self.centeringResultLcp[self.frequencyChannel] = ls_res['x']
-        #     _ewSlopeLcp, _sSlopeLcp, _sLcpStair = ls_res['x']
-        #     ls_res = least_squares(self.diskDiff_stair_fluxNorm, x_ini, args = (1,Tb/self.convolutionNormCoef), ftol=self.centering_ftol)
-        #     _ewSlopeRcp, _sSlopeRcp, _sRcpStair = ls_res['x']
-        #     # self.centeringResultRcp[self.frequencyChannel] = ls_res['x']
+        with threadpool_limits(limits=1, user_api='blas'):
+            self.createDisk(sunpy.coordinates.sun.angular_radius(self.dateObs).to_value())
+            self.createUvUniform()
+    
+            Tb = self.ZirinQSunTb.getTbAtFrequency(self.freqList[self.frequencyChannel]*1e-6) * 1e3
+            self.x_ini_centering_lcp[self.frequencyChannel][0] = Tb/self.convolutionNormCoef
+            self.x_ini_centering_rcp[self.frequencyChannel][0] = Tb/self.convolutionNormCoef
             
-        #     self.diskLevelLcp[self.frequencyChannel] = Tb/self.convolutionNormCoef
-        #     self.diskLevelRcp[self.frequencyChannel] = Tb/self.convolutionNormCoef
+            ls_res = least_squares(self.diskDiff_stair, self.x_ini_centering_lcp[self.frequencyChannel], args = (0,), ftol=self.centering_ftol)
+            self.centeringResultLcp[self.frequencyChannel] = ls_res['x']
+            _diskLevelLcp, _ewSlopeLcp, _sSlopeLcp, _sLcpStair = ls_res['x']
+            ls_res = least_squares(self.diskDiff_stair, self.x_ini_centering_rcp[self.frequencyChannel], args = (1,), ftol=self.centering_ftol)
+            _diskLevelRcp, _ewSlopeRcp, _sSlopeRcp, _sRcpStair = ls_res['x']
+            self.centeringResultRcp[self.frequencyChannel] = ls_res['x']
+            
+            if _diskLevelLcp<0:
+                _sLcpStair += 180
+                _diskLevelLcp *= -1
+            if _diskLevelRcp<0:
+                _sRcpStair += 180
+                _diskLevelRcp *= -1
+                
+            if not self.corr_amp_exist:
+                self.diskLevelLcp[self.frequencyChannel] = _diskLevelLcp
+                self.diskLevelRcp[self.frequencyChannel] = _diskLevelRcp
+                self.ewAntAmpLcp[self.frequencyChannel][self.ewAntAmpLcp[self.frequencyChannel]!=1e6] *= NP.sqrt(_diskLevelLcp*self.convolutionNormCoef / Tb)
+                self.sAntAmpLcp[self.frequencyChannel][self.sAntAmpLcp[self.frequencyChannel]!=1e6] *= NP.sqrt(_diskLevelLcp*self.convolutionNormCoef / Tb)
+                self.ewAntAmpRcp[self.frequencyChannel][self.ewAntAmpRcp[self.frequencyChannel]!=1e6] *= NP.sqrt(_diskLevelRcp*self.convolutionNormCoef / Tb)
+                self.sAntAmpRcp[self.frequencyChannel][self.sAntAmpRcp[self.frequencyChannel]!=1e6] *= NP.sqrt(_diskLevelRcp*self.convolutionNormCoef / Tb)
+            
+            self.ewSlopeLcp[self.frequencyChannel] = self.wrap(self.ewSlopeLcp[self.frequencyChannel] + _ewSlopeLcp)
+            self.sSlopeLcp[self.frequencyChannel] = self.wrap(self.sSlopeLcp[self.frequencyChannel] + _sSlopeLcp)
+            self.ewSlopeRcp[self.frequencyChannel] = self.wrap(self.ewSlopeRcp[self.frequencyChannel] + _ewSlopeRcp)
+            self.sSlopeRcp[self.frequencyChannel] = self.wrap(self.sSlopeRcp[self.frequencyChannel] + _sSlopeRcp)
+            self.sLcpStair[self.frequencyChannel] = self.wrap(self.sLcpStair[self.frequencyChannel] + _sLcpStair)
+            self.sRcpStair[self.frequencyChannel] = self.wrap(self.sRcpStair[self.frequencyChannel] + _sRcpStair)
+            
+    def findDisk_stair_long(self):
+        with threadpool_limits(limits=1, user_api='blas'):
+            self.createDisk(sunpy.coordinates.sun.angular_radius(self.dateObs).to_value())
+            self.createUvUniform()
+    
+            Tb = self.ZirinQSunTb.getTbAtFrequency(self.freqList[self.frequencyChannel]*1e-6) * 1e3
+            # self.x_ini_centering_lcp[self.frequencyChannel][0] = Tb/self.convolutionNormCoef
+            # self.x_ini_centering_rcp[self.frequencyChannel][0] = Tb/self.convolutionNormCoef
+            
+            fun_lcp = 10
+            fun_rcp = 10
+      
+            for i in range(3):
+                for j in range(3):
+                    start_time = time.time()
+                    
+                    self.x_ini = [Tb/self.convolutionNormCoef, -90+i*90, -90+j*90, 0]
+                    
+                    ls_res = least_squares(self.diskDiff, self.x_ini, args = (0,), ftol=1e-3)
+                    print(NP.sum(ls_res['fun']**2))
+                    if i==0 and j==0:
+                        _diskLevelLcp, _ewSlopeLcp, _sSlopeLcp, _sLcpStair = ls_res['x']
+                        fun_lcp = NP.sum(ls_res['fun']**2)
+                        _diskLevelRcp, _ewSlopeRcp, _sSlopeRcp, _sRcpStair = ls_res['x']
+                        fun_rcp = NP.sum(ls_res['fun']**2)
+                        
+                    else:
+                        if NP.sum(ls_res['fun']**2)<fun_lcp:# and ls_res['x'][0]>0:
+                            print('min updated')
+                            _diskLevelLcp, _ewSlopeLcp, _sSlopeLcp, _sLcpStair = ls_res['x']
+                            fun_lcp = NP.sum(ls_res['fun']**2)
+                            print((_diskLevelLcp, _ewSlopeLcp, _sSlopeLcp, _sLcpStair))
+     
+                        self.x_ini = [Tb/self.convolutionNormCoef, -90+i*90, -90+j*90, 0]
+                        ls_res = least_squares(self.diskDiff, self.x_ini, args = (1,), ftol=1e-3)
+                        if NP.sum(ls_res['fun']**2)<fun_rcp:# and ls_res['x'][0]>0:
+                            _diskLevelRcp, _ewSlopeRcp, _sSlopeRcp, _sRcpStair = ls_res['x']
+                            fun_rcp = NP.sum(ls_res['fun']**2)
+                        
+                    print("ITER " + str(i*3+j) + " --- %s seconds ---" % (time.time() - start_time))
+                    
+            self.x_ini = [_diskLevelLcp, _ewSlopeLcp, _sSlopeLcp, _sLcpStair]               
+            ls_res = least_squares(self.diskDiff, self.x_ini, args = (0,), ftol=1e-14)
+            _diskLevelLcp, _ewSlopeLcp, _sSlopeLcp, _sLcpStair = ls_res['x']
+            
+            self.x_ini = [_diskLevelRcp, _ewSlopeRcp, _sSlopeRcp, _sRcpStair]               
+            ls_res = least_squares(self.diskDiff, self.x_ini, args = (1,), ftol=1e-14)
+            _diskLevelRcp, _ewSlopeRcp, _sSlopeRcp, _sRcpStair = ls_res['x']
+            
+            
+            
+            # ls_res = least_squares(self.diskDiff_stair, self.x_ini_centering_lcp[self.frequencyChannel], args = (0,), ftol=self.centering_ftol)
+            # self.centeringResultLcp[self.frequencyChannel] = ls_res['x']
+            # _diskLevelLcp, _ewSlopeLcp, _sSlopeLcp, _sLcpStair = ls_res['x']
+            # ls_res = least_squares(self.diskDiff_stair, self.x_ini_centering_rcp[self.frequencyChannel], args = (1,), ftol=self.centering_ftol)
+            # _diskLevelRcp, _ewSlopeRcp, _sSlopeRcp, _sRcpStair = ls_res['x']
+            # self.centeringResultRcp[self.frequencyChannel] = ls_res['x']
+            
+            if _diskLevelLcp<0:
+                _sLcpStair += 180
+                _diskLevelLcp *= -1
+            if _diskLevelRcp<0:
+                _sRcpStair += 180
+                _diskLevelRcp *= -1
+                
+            if not self.corr_amp_exist:
+                self.diskLevelLcp[self.frequencyChannel] = _diskLevelLcp
+                self.diskLevelRcp[self.frequencyChannel] = _diskLevelRcp
+                self.ewAntAmpLcp[self.frequencyChannel][self.ewAntAmpLcp[self.frequencyChannel]!=1e6] *= NP.sqrt(_diskLevelLcp*self.convolutionNormCoef / Tb)
+                self.sAntAmpLcp[self.frequencyChannel][self.sAntAmpLcp[self.frequencyChannel]!=1e6] *= NP.sqrt(_diskLevelLcp*self.convolutionNormCoef / Tb)
+                self.ewAntAmpRcp[self.frequencyChannel][self.ewAntAmpRcp[self.frequencyChannel]!=1e6] *= NP.sqrt(_diskLevelRcp*self.convolutionNormCoef / Tb)
+                self.sAntAmpRcp[self.frequencyChannel][self.sAntAmpRcp[self.frequencyChannel]!=1e6] *= NP.sqrt(_diskLevelRcp*self.convolutionNormCoef / Tb)
+            
+            self.ewSlopeLcp[self.frequencyChannel] = self.wrap(self.ewSlopeLcp[self.frequencyChannel] + _ewSlopeLcp)
+            self.sSlopeLcp[self.frequencyChannel] = self.wrap(self.sSlopeLcp[self.frequencyChannel] + _sSlopeLcp)
+            self.ewSlopeRcp[self.frequencyChannel] = self.wrap(self.ewSlopeRcp[self.frequencyChannel] + _ewSlopeRcp)
+            self.sSlopeRcp[self.frequencyChannel] = self.wrap(self.sSlopeRcp[self.frequencyChannel] + _sSlopeRcp)
+            self.sLcpStair[self.frequencyChannel] = self.wrap(self.sLcpStair[self.frequencyChannel] + _sLcpStair)
+            self.sRcpStair[self.frequencyChannel] = self.wrap(self.sRcpStair[self.frequencyChannel] + _sRcpStair)
+            
         
-        # else:
-        Tb = self.ZirinQSunTb.getTbAtFrequency(self.freqList[self.frequencyChannel]*1e-6) * 1e3
-        self.x_ini_centering_lcp[self.frequencyChannel][0] = Tb/self.convolutionNormCoef
-        self.x_ini_centering_rcp[self.frequencyChannel][0] = Tb/self.convolutionNormCoef
-        
-        ls_res = least_squares(self.diskDiff_stair, self.x_ini_centering_lcp[self.frequencyChannel], args = (0,), ftol=self.centering_ftol)
-        self.centeringResultLcp[self.frequencyChannel] = ls_res['x']
-        _diskLevelLcp, _ewSlopeLcp, _sSlopeLcp, _sLcpStair = ls_res['x']
-        ls_res = least_squares(self.diskDiff_stair, self.x_ini_centering_rcp[self.frequencyChannel], args = (1,), ftol=self.centering_ftol)
-        _diskLevelRcp, _ewSlopeRcp, _sSlopeRcp, _sRcpStair = ls_res['x']
-        self.centeringResultRcp[self.frequencyChannel] = ls_res['x']
-        
-        if _diskLevelLcp<0:
-            _sLcpStair += 180
-            _diskLevelLcp *= -1
-        if _diskLevelRcp<0:
-            _sRcpStair += 180
-            _diskLevelRcp *= -1
-        
-        self.diskLevelLcp[self.frequencyChannel] = _diskLevelLcp
-        self.diskLevelRcp[self.frequencyChannel] = _diskLevelRcp
-        
-        if not self.corr_amp_exist:
-            self.ewAntAmpLcp[self.frequencyChannel][self.ewAntAmpLcp[self.frequencyChannel]!=1e6] *= NP.sqrt(_diskLevelLcp*self.convolutionNormCoef / Tb)
-            self.sAntAmpLcp[self.frequencyChannel][self.sAntAmpLcp[self.frequencyChannel]!=1e6] *= NP.sqrt(_diskLevelLcp*self.convolutionNormCoef / Tb)
-            self.ewAntAmpRcp[self.frequencyChannel][self.ewAntAmpRcp[self.frequencyChannel]!=1e6] *= NP.sqrt(_diskLevelRcp*self.convolutionNormCoef / Tb)
-            self.sAntAmpRcp[self.frequencyChannel][self.sAntAmpRcp[self.frequencyChannel]!=1e6] *= NP.sqrt(_diskLevelRcp*self.convolutionNormCoef / Tb)
-        
-        self.ewSlopeLcp[self.frequencyChannel] = self.wrap(self.ewSlopeLcp[self.frequencyChannel] + _ewSlopeLcp)
-        self.sSlopeLcp[self.frequencyChannel] = self.wrap(self.sSlopeLcp[self.frequencyChannel] + _sSlopeLcp)
-        self.ewSlopeRcp[self.frequencyChannel] = self.wrap(self.ewSlopeRcp[self.frequencyChannel] + _ewSlopeRcp)
-        self.sSlopeRcp[self.frequencyChannel] = self.wrap(self.sSlopeRcp[self.frequencyChannel] + _sSlopeRcp)
-        self.sLcpStair[self.frequencyChannel] = self.wrap(self.sLcpStair[self.frequencyChannel] + _sLcpStair)
-        self.sRcpStair[self.frequencyChannel] = self.wrap(self.sRcpStair[self.frequencyChannel] + _sRcpStair)
+    def im_min(self, stair, pol):
+        if pol==0:
+            self.sLcpStair[self.frequencyChannel] = stair
+            self.buildSPhase()
+            self.vis2uv(0)
+            self.uv2lmImage()
+            return self.lcp.real.min()
+        else:
+            self.sRcpStair[self.frequencyChannel] = stair
+            self.buildSPhase()
+            self.vis2uv(0)
+            self.uv2lmImage()
+            return self.rcp.real.min()
 
-            
-    def findDisk_stair_radius(self):
-        self.createUvUniform()
-        x_ini = [1,0,0,0,0.68]
-        ls_res = least_squares(self.diskDiff_stair_radius, x_ini, args = (0,), ftol=self.centering_ftol)
-        print(NP.sum(ls_res['fun']**2))
-        self.diskLevelLcp, self.ewSlopeLcp, self.sSlopeLcp, self.sLcpStair, self.radius_lcp = ls_res['x']
-        ls_res = least_squares(self.diskDiff_stair_radius, x_ini, args = (1,), ftol=self.centering_ftol)
-        print(NP.sum(ls_res['fun']**2))
-        self.diskLevelRcp, self.ewSlopeRcp, self.sSlopeRcp, self.sRcpStair, self.radius_rcp = ls_res['x']
+    def findStair(self):
+        sizeOfUv_prev = self.sizeOfUv
+        self.setSizeOfUv(256)
+        fun_lcp = 1e5
+        stair_lcp = 0
+        fun_rcp = 1e5
+        stair_rcp = 0
+        for i in range(6):
+            x_ini = NP.array((i*30))
+            res = scipy.optimize.minimize(self.im_min, x_ini, args = (0,), bounds = ((-180,180),), tol=1e-3) # 
+            if res['fun'] < fun_lcp:
+                fun_lcp = res['fun']
+                stair_lcp = res['x']
+            res = scipy.optimize.minimize(self.im_min, x_ini, args = (1,), bounds = ((-180,180),), tol=1e-3) # 
+            if res['fun'] < fun_rcp:
+                fun_rcp = res['fun']
+                stair_rcp = res['x']
+                
+        self.sLcpStair[self.frequencyChannel] = stair_lcp
+        self.sRcpStair[self.frequencyChannel] = stair_rcp
+        self.buildSPhase()
+        self.vis2uv(0)
+        self.uv2lmImage()
+        if NP.sum(self.lcp.real[100:150,100:150]) < 0:
+            self.sLcpStair[self.frequencyChannel] = self.wrap(self.sLcpStair[self.frequencyChannel] + 180)
+        if NP.sum(self.rcp.real[100:150,100:150]) < 0:
+            self.sRcpStair[self.frequencyChannel] = self.wrap(self.sRcpStair[self.frequencyChannel] + 180)
+
+        print((self.sLcpStair[self.frequencyChannel], self.sRcpStair[self.frequencyChannel]))
+        self.buildSPhase()
+        self.setSizeOfUv(sizeOfUv_prev)
+        self.vis2uv(0, average = 20)
         
-        if self.diskLevelLcp<0:
-            self.sLcpStair += 180
-            self.diskLevelLcp *= -1
-        if self.diskLevelRcp<0:
-            self.sRcpStair += 180
-            self.diskLevelRcp *= -1
-        
-        while self.ewSlopeLcp<-180:
-            self.ewSlopeLcp+=360
-        while self.ewSlopeLcp>180:
-            self.ewSlopeLcp-=360
-        while self.sSlopeLcp<-180:
-            self.sSlopeLcp+=360
-        while self.sSlopeLcp>180:
-            self.sSlopeLcp-=360
-        while self.ewSlopeRcp<-180:
-            self.ewSlopeRcp+=360
-        while self.ewSlopeRcp>180:
-            self.ewSlopeRcp-=360
-        while self.sSlopeRcp<-180:
-            self.sSlopeRcp+=360
-        while self.sSlopeRcp>180:
-            self.sSlopeRcp-=360
-        while self.sLcpStair<-180:
-            self.sLcpStair+=360
-        while self.sLcpStair>180:
-            self.sLcpStair-=360
-        while self.sRcpStair<-180:
-            self.sRcpStair+=360
-        while self.sRcpStair>180:
-            self.sRcpStair-=360
-        
-    def centerDisk(self):
-        self.findDisk_stair()
+    def centerDisk(self, long = False):
+        if long:
+            self.findDisk_stair_long()
+        else:
+            self.findDisk_stair()
+        # self.findStair()
+        # self.findDisk()
         self.buildEwPhase()
         self.buildSPhase()
         self.correctPhaseSlopeRL(self.frequencyChannel)
@@ -1662,3 +1901,7 @@ class SrhFitsFile():
         qSun_lm = NP.roll(NP.roll(qSun_lm,self.sizeOfUv//2,0),self.sizeOfUv//2,1)# / self.sizeOfUv;
         qSun_lm = NP.flip(qSun_lm, 0)
         self.modelDisk = qSun_lm
+        
+    # def findStair(self):
+    #     self.setSizeOfUv(256)
+        

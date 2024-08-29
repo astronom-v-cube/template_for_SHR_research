@@ -340,10 +340,10 @@ class SrhEdik(QtWidgets.QMainWindow):#MainWindow):
  
     def onCenterDisk(self):
         self.srhFits.centerDisk()
-        # self.ewLcpPhaseSlopeSpin.setValue(self.srhFits.ewSlopeLcp[self.currentFrequencyChannel])
-        # self.sLcpPhaseSlopeSpin.setValue(self.srhFits.sSlopeLcp[self.currentFrequencyChannel])
-        # self.ewRcpPhaseSlopeSpin.setValue(self.srhFits.ewSlopeRcp[self.currentFrequencyChannel])
-        # self.sRcpPhaseSlopeSpin.setValue(self.srhFits.sSlopeRcp[self.currentFrequencyChannel])
+        self.ewLcpPhaseSlopeSpin.setValue(self.srhFits.ewSlopeLcp[self.currentFrequencyChannel])
+        self.sLcpPhaseSlopeSpin.setValue(self.srhFits.sSlopeLcp[self.currentFrequencyChannel])
+        self.ewRcpPhaseSlopeSpin.setValue(self.srhFits.ewSlopeRcp[self.currentFrequencyChannel])
+        self.sRcpPhaseSlopeSpin.setValue(self.srhFits.sSlopeRcp[self.currentFrequencyChannel])
         # self.sPhaseStairLcp.setValue(self.srhFits.sLcpStair[self.currentFrequencyChannel])
         # self.sPhaseStairRcp.setValue(self.srhFits.sRcpStair[self.currentFrequencyChannel])
         if (self.imageUpdate):
@@ -766,15 +766,15 @@ class SrhEdik(QtWidgets.QMainWindow):#MainWindow):
     def onOpenMS(self):
         self.MSName = QtWidgets.QFileDialog.getExistingDirectory(self)
         self.MSTextbox.setText(self.MSName)
-        self.cleanTable.item(0,1).setText('\''+self.MSName+'\'')
-        self.cleanTable.item(1,1).setText('\''+os.path.dirname(self.MSName)+'/images/'+os.path.basename(self.MSName).split('.')[0]+'\'')
+        self.cleanTable.item(0,1).setText(self.MSName)
+        self.cleanTable.item(1,1).setText(os.path.dirname(self.MSName)+'/images/'+os.path.basename(self.MSName).split('.')[0])
         self.gaincalTable.item(0,1).setText('\''+self.MSName+'\'')
         self.gaincalTable.item(1,1).setText('\''+os.path.dirname(self.MSName)+'/gaintable.gcal\'')
         self.applycalTable.item(0,1).setText('\''+self.MSName+'\'')
         
     def initCleanDict(self):
-       self.cleanParams = {'vis = ':'\'\'',
-                            'imagename = ':'\'\'',
+       self.cleanParams = {'vis = ':'',
+                            'imagename = ':'',
                             'cell = ':'2.45',
                             'scan = ' : '0~19',
                             'stokes = ' : 'RRLL',
@@ -953,13 +953,13 @@ class SrhEdik(QtWidgets.QMainWindow):#MainWindow):
         if self.typeOfLeftCasaImage.currentIndex() == 3:
             self.im_l = self.casaLcpData - self.casaRcpData
         if self.typeOfLeftCasaImage.currentIndex() == 4:
-            self.im_l = image(self.cleanParams['imagename = '][1:-1]+'.model').getdata()[0][0]
+            self.im_l = image(self.cleanParams['imagename = ']+'.model').getdata()[0][0]
         if self.typeOfLeftCasaImage.currentIndex() == 5:
-            self.im_l = image(self.cleanParams['imagename = '][1:-1]+'.model').getdata()[0][1]
+            self.im_l = image(self.cleanParams['imagename = ']+'.model').getdata()[0][1]
         if self.typeOfLeftCasaImage.currentIndex() == 6:
-            self.im_l = image(self.cleanParams['imagename = '][1:-1]+'.psf').getdata()[0][0]
+            self.im_l = image(self.cleanParams['imagename = ']+'.psf').getdata()[0][0]
         if self.typeOfLeftCasaImage.currentIndex() == 7:
-            self.im_l = image(self.cleanParams['imagename = '][1:-1]+'.pb').getdata()[0][0]
+            self.im_l = image(self.cleanParams['imagename = ']+'.pb').getdata()[0][0]
         self.casaLeftCanvas.imshow(self.im_l*self.casaLeftScale + self.casaLeftOffset, NP.min(self.im_l), NP.max(self.im_l))
 #        self.buildCasaImage()
         
@@ -973,13 +973,13 @@ class SrhEdik(QtWidgets.QMainWindow):#MainWindow):
         if self.typeOfRightCasaImage.currentIndex() == 3:
             self.im_r = self.casaLcpData - self.casaRcpData
         if self.typeOfRightCasaImage.currentIndex() == 4:
-            self.im_r = image(self.cleanParams['imagename = '][1:-1]+'.model').getdata()[0][0]
+            self.im_r = image(self.cleanParams['imagename = ']+'.model').getdata()[0][0]
         if self.typeOfRightCasaImage.currentIndex() == 5:
-            self.im_r = image(self.cleanParams['imagename = '][1:-1]+'.model').getdata()[0][1]
+            self.im_r = image(self.cleanParams['imagename = ']+'.model').getdata()[0][1]
         if self.typeOfRightCasaImage.currentIndex() == 6:
-            self.im_r = image(self.cleanParams['imagename = '][1:-1]+'.psf').getdata()[0][0]
+            self.im_r = image(self.cleanParams['imagename = ']+'.psf').getdata()[0][0]
         if self.typeOfRightCasaImage.currentIndex() == 7:
-            self.im_r = image(self.cleanParams['imagename = '][1:-1]+'.pb').getdata()[0][0]
+            self.im_r = image(self.cleanParams['imagename = ']+'.pb').getdata()[0][0]
         self.casaRightCanvas.imshow(self.im_r*self.casaRightScale + self.casaRightOffset, NP.min(self.im_r), NP.max(self.im_r))
 #        self.buildCasaImage()
     
@@ -990,17 +990,44 @@ class SrhEdik(QtWidgets.QMainWindow):#MainWindow):
     def onCasaSaveAs(self):
         saveName, _ = QtWidgets.QFileDialog.getSaveFileName(self)        
         if saveName:
-            saveExt = saveName.split('.')[1]
-            if saveExt == 'fit' or saveExt == 'fits':
-                imagename = self.cleanParams['imagename = '][:-1]+'.image\''
-                fitsname = '\'' + saveName + '\''
-        
-                savefits_script = os.path.join(os.path.dirname(self.MSName), 'saveFits.py')
-                with open(savefits_script, 'w') as f:
-                    f.write('imagename = ' + imagename + '\n')
-                    f.write('fitsimage = ' + fitsname + '\n')
-                    f.write('history = False\nexportfits()')
-                os.system('casa -c ' + savefits_script.replace(' ', '\ '))
+            
+                    
+            scan = self.currentScan
+            nameParts = saveName.split('.') 
+            fitsName = ('%s_%s.%s' % (nameParts[0], self.timeList.itemText(scan), nameParts[1]))
+    
+            pHeader = fits.Header();
+            pHeader['DATE-OBS']     = self.srhFits.hduList[0].header['DATE-OBS'] + 'T' + self.timeList.itemText(scan)
+            pHeader['T-OBS']     = self.srhFits.hduList[0].header['DATE-OBS'] + 'T' + self.timeList.itemText(scan)#self.srhFits.hduList[0].header['TIME-OBS']
+            pHeader['INSTRUME']     = self.srhFits.hduList[0].header['INSTRUME']
+            pHeader['ORIGIN']       = self.srhFits.hduList[0].header['ORIGIN']
+            pHeader['OBS-LAT']      = self.srhFits.hduList[0].header['OBS-LAT']
+            pHeader['OBS-LONG']     = self.srhFits.hduList[0].header['OBS-LONG']
+            pHeader['OBS-ALT']      = self.srhFits.hduList[0].header['OBS-ALT']
+            pHeader['FR_CHAN']      = self.srhFits.hduList[0].header['FR_CHAN']
+            pHeader['FREQUENC']     = ('%3.3f') % (self.srhFits.freqList[self.currentFrequencyChannel]*1e3)
+            pHeader['CDELT1']       = float(self.cleanParams['cell = '])
+            pHeader['CDELT2']       = float(self.cleanParams['cell = '])
+            pHeader['CRPIX1']       = float(self.cleanParams['imsize = ']) // 2
+            pHeader['CRPIX2']       = float(self.cleanParams['imsize = ']) // 2
+            pHeader['CTYPE1']       = 'HPLN-TAN'
+            pHeader['CTYPE2']       = 'HPLT-TAN'
+            pHeader['CUNIT1']       = 'arcsec'
+            pHeader['CUNIT2']       = 'arcsec'
+            
+    
+            savePath, saveExt = fitsName.split('.')
+            
+            pHdu = fits.PrimaryHDU(self.casaLcpData + self.casaRcpData, header=pHeader);
+            hduList = fits.HDUList([pHdu]);
+            hduList.writeto(savePath + '_I.' + saveExt, overwrite=True);
+            hduList.close();
+            
+            pHdu = fits.PrimaryHDU(self.casaLcpData - self.casaRcpData, header=pHeader);
+            hduList = fits.HDUList([pHdu]);
+            hduList.writeto(savePath + '_V.' + saveExt, overwrite=True);
+            
+            hduList.close();
                 
     def onDiskModel(self):
         model_image = image(self.cleanParams['imagename = '][1:-1]+'.model')
@@ -1256,7 +1283,7 @@ class SrhEdik(QtWidgets.QMainWindow):#MainWindow):
         self.typeOfPlot.addItem('Image mean')
         
         self.binsSpin = QtWidgets.QSpinBox (self, prefix = 'bins ')
-        self.binsSpin.setRange(0.,10000.)
+        self.binsSpin.setRange(0,10000)
         self.binsSpin.valueChanged.connect(self.onBinsChanged)
         self.binsSpin.setValue(self.bins)
         self.binsSpin.setStyle(CustomStyle())
@@ -1720,98 +1747,92 @@ class SrhEdik(QtWidgets.QMainWindow):#MainWindow):
     def onOpen(self):
         fitsNames, _ = QtWidgets.QFileDialog.getOpenFileNames(self)    
         fitsNames.sort()
-        if fitsNames[0]:
-            self.uvSize = 1025
-            self.currentScan = 0
-            self.scan.setValue(0)
-            self.srhFits = SrhFitsFile(fitsNames[0], self.uvSize)
-            self.srhFits.getHourAngle(self.currentScan)
-            
-            self.pAngle = self.srhFits.pAngle
-            # try:
-            #     client = Client('http://ephemeris.rao.istp.ac.ru/?wsdl')
-            #     result = client.service.Ephemeride('SSRT','sun',self.srhFits.dateObs)
-            #     self.pAngle = NP.deg2rad(float(result[0]['PAngle']))
-            # except:
-            #     self.pAngle = NP.deg2rad(coordinates.sun.P(self.srhFits.dateObs).to_value())
-            
-            # self.pAngle = NP.deg2rad(coordinates.sun.P(self.srhFits.dateObs).to_value())
-            
-            
+        self.uvSize = 1025
+        self.currentScan = 0
+        self.scan.setValue(0)
+        self.srhFits = SrhFitsFile(fitsNames, self.uvSize)
+        self.srhFits.getHourAngle(self.currentScan)
+        
+        self.pAngle = self.srhFits.pAngle
+        # try:
+        #     client = Client('http://ephemeris.rao.istp.ac.ru/?wsdl')
+        #     result = client.service.Ephemeride('SSRT','sun',self.srhFits.dateObs)
+        #     self.pAngle = NP.deg2rad(float(result[0]['PAngle']))
+        # except:
+        #     self.pAngle = NP.deg2rad(coordinates.sun.P(self.srhFits.dateObs).to_value())
+        
+        # self.pAngle = NP.deg2rad(coordinates.sun.P(self.srhFits.dateObs).to_value())
+        
+        
 #            self.srhFits.setCalibIndex(0)
-            self.srhFits.vis2uv(self.currentScan, phaseCorrect=True, PSF=False);
-            self.srhFits.uv2lmImage()
+        self.srhFits.vis2uv(self.currentScan, phaseCorrect=True, PSF=False);
+        self.srhFits.uv2lmImage()
 
-            self.frequencyList.clear()
-            for freq in self.srhFits.freqList:
-                self.frequencyList.addItem(str(freq))
+        self.frequencyList.clear()
+        for freq in self.srhFits.freqList:
+            self.frequencyList.addItem(str(freq))
 
-            self.frequencyChannel.setRange(0, self.srhFits.freqListLength-1)
+        self.frequencyChannel.setRange(0, self.srhFits.freqListLength-1)
 #            self.frequencyChannel.setValue(self.currentFrequencyChannel)
-            self.scan.setRange(0, self.srhFits.dataLength-1)
+        self.scan.setRange(0, self.srhFits.dataLength-1)
 #            self.scan.setValue(self.currentScan)
-            self.calibScan.setRange(0, self.srhFits.dataLength-1)
-            
-            
-            self.ewLcpPhaseCorrection = NP.zeros(self.ewAntennaNumber)
-            self.ewRcpPhaseCorrection = NP.zeros(self.ewAntennaNumber)
-            self.sLcpPhaseCorrection = NP.zeros(self.sAntennaNumber)
-            self.sRcpPhaseCorrection = NP.zeros(self.sAntennaNumber)
+        self.calibScan.setRange(0, self.srhFits.dataLength-1)
+        
+        
+        self.ewLcpPhaseCorrection = NP.zeros(self.ewAntennaNumber)
+        self.ewRcpPhaseCorrection = NP.zeros(self.ewAntennaNumber)
+        self.sLcpPhaseCorrection = NP.zeros(self.sAntennaNumber)
+        self.sRcpPhaseCorrection = NP.zeros(self.sAntennaNumber)
 
-            self.ewPhaseCoefsLcp = NP.zeros((self.srhFits.freqListLength))
-            self.ewPhaseCoefsRcp = NP.zeros((self.srhFits.freqListLength))
-            self.sPhaseCoefsLcp = NP.zeros((self.srhFits.freqListLength))
-            self.sPhaseCoefsRcp = NP.zeros((self.srhFits.freqListLength))
-            
-            self.ewLcpPhaseSlope = NP.zeros((self.srhFits.freqListLength))
-            self.ewRcpPhaseSlope = NP.zeros((self.srhFits.freqListLength))
-            self.sLcpPhaseSlope = NP.zeros((self.srhFits.freqListLength))
-            self.sRcpPhaseSlope = NP.zeros((self.srhFits.freqListLength))
-            
-            self.imageUpdate = True
-            self.qSun = NP.zeros((self.uvSize//2, self.uvSize//2))
-            sunRadius = 980 / (self.arcsecPerPixel*2)
-            for i in range(self.uvSize//2):
-                x = i - self.uvSize/4
-                for j in range(self.uvSize//2):
-                    y = j - self.uvSize/4
-                    if (NP.sqrt(x*x + y*y) < sunRadius):
-                        self.qSun[i , j] = 1.
-                        
-            data = NP.flip(self.srhFits.lcp.real,0)
-            self.lcpCanvas.imshow(data, NP.min(data), NP.max(data))
-            self.lcpCanvas.plot([0,1])
-            self.lcpMaxTrace.append(NP.max(data))
-            self.lcpData = data
+        self.ewPhaseCoefsLcp = NP.zeros((self.srhFits.freqListLength))
+        self.ewPhaseCoefsRcp = NP.zeros((self.srhFits.freqListLength))
+        self.sPhaseCoefsLcp = NP.zeros((self.srhFits.freqListLength))
+        self.sPhaseCoefsRcp = NP.zeros((self.srhFits.freqListLength))
+        
+        self.ewLcpPhaseSlope = NP.zeros((self.srhFits.freqListLength))
+        self.ewRcpPhaseSlope = NP.zeros((self.srhFits.freqListLength))
+        self.sLcpPhaseSlope = NP.zeros((self.srhFits.freqListLength))
+        self.sRcpPhaseSlope = NP.zeros((self.srhFits.freqListLength))
+        
+        self.imageUpdate = True
+        self.qSun = NP.zeros((self.uvSize//2, self.uvSize//2))
+        sunRadius = coordinates.sun.angular_radius(self.srhFits.dateObs).to_value() / (self.arcsecPerPixel*2)
+        for i in range(self.uvSize//2):
+            x = i - self.uvSize/4
+            for j in range(self.uvSize//2):
+                y = j - self.uvSize/4
+                if (NP.sqrt(x*x + y*y) < sunRadius):
+                    self.qSun[i , j] = 1.
+                    
+        data = NP.flip(self.srhFits.lcp.real,0)
+        self.lcpCanvas.imshow(data, NP.min(data), NP.max(data))
+        self.lcpCanvas.plot([0,1])
+        self.lcpMaxTrace.append(NP.max(data))
+        self.lcpData = data
 #            self.lcpMaxCanvas.plot(self.lcpMaxTrace)
 
-            data = NP.flip(self.srhFits.rcp.real,0)
-            self.rcpCanvas.imshow(data, NP.min(data), NP.max(data))
-            self.rcpMaxTrace.append(NP.max(data))
-            self.rcpData = data
+        data = NP.flip(self.srhFits.rcp.real,0)
+        self.rcpCanvas.imshow(data, NP.min(data), NP.max(data))
+        self.rcpMaxTrace.append(NP.max(data))
+        self.rcpData = data
 #            self.rcpMaxCanvas.plot(self.rcpMaxTrace)
 
-            self.vminI = (self.lcpData + self.rcpData).min() * 0.5
-            self.vmaxI = (self.lcpData + self.rcpData).max() * 0.5
-            self.vminV = (self.lcpData - self.rcpData).min() * 0.5
-            self.vmaxV = (self.lcpData - self.rcpData).max() * 0.5
-            self.vminLcp = self.lcpData.min()
-            self.vmaxLcp = self.lcpData.max()
-            self.vminRcp = self.lcpData.min()
-            self.vmaxRcp = self.lcpData.max()
+        self.vminI = (self.lcpData + self.rcpData).min() * 0.5
+        self.vmaxI = (self.lcpData + self.rcpData).max() * 0.5
+        self.vminV = (self.lcpData - self.rcpData).min() * 0.5
+        self.vmaxV = (self.lcpData - self.rcpData).max() * 0.5
+        self.vminLcp = self.lcpData.min()
+        self.vmaxLcp = self.lcpData.max()
+        self.vminRcp = self.lcpData.min()
+        self.vmaxRcp = self.lcpData.max()
 
-            self.setWindowTitle('SRH phase edit:' + fitsNames[0])
+        self.setWindowTitle('SRH phase edit:' + fitsNames[0])
 
-            for fitsName in fitsNames[1:]:
-                self.srhFits.append(fitsName)
-                self.scan.setRange(0, self.srhFits.dataLength-1)
-                self.calibScan.setRange(0, self.srhFits.dataLength-1)
-        
         self.averageScansSpin.setRange(0, self.srhFits.dataLength)
         
         for tim in self.srhFits.freqTime[0,:]:
             fTime = QtCore.QTime(0,0)
-            fTime = fTime.addMSecs(tim * 1000)
+            fTime = fTime.addMSecs(int(tim) * 1000)
             self.timeList.addItem(fTime.toString('hh:mm:ss'))
             
         self.fitsIsOpen = True
@@ -1923,4 +1944,4 @@ if not application:
 phaseEdit1224 = SrhEdik();
 phaseEdit1224.setWindowTitle('SRH editor')
 phaseEdit1224.show();
-sys.exit(application.exec_());
+#sys.exit(application.exec_());

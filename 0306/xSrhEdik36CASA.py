@@ -5,6 +5,15 @@ Created on Wed May  2 10:36:23 2018
 
 @author: sergey
 """
+import os
+
+# N_THREADS="1"
+# os.environ['OMP_NUM_THREADS'] = N_THREADS
+# os.environ['OPENBLAS_NUM_THREADS'] = N_THREADS
+# os.environ['MKL_NUM_THREADS'] = N_THREADS
+# os.environ['VECLIB_MAXIMUM_THREADS'] = N_THREADS
+# os.environ['NUMEXPR_NUM_THREADS'] = N_THREADS
+# os.system('./set_num_threads')
 
 import sys;
 from PyQt5 import QtGui, QtCore, QtWidgets
@@ -17,7 +26,7 @@ from skimage.transform import warp, AffineTransform
 from astropy.io import fits
 from astropy.time import Time, TimeDelta
 #import casacore.tables as T
-# from casacore.images import image
+from casacore.images import image
 #import base2uvw as bl2uvw
 #import srhMS2
 from mpl_toolkits.mplot3d import Axes3D
@@ -29,8 +38,6 @@ import matplotlib.colors
 import os
 import casaDescDicts as desc
 from casatasks import tclean
-from matplotlib.colors import LogNorm, Normalize, TwoSlopeNorm
-import matplotlib.colors as mcolors
 
 cdict = {'red': ((0.0, 0.0, 0.0),
                  (0.2, 0.0, 0.0),
@@ -107,9 +114,7 @@ class ResponseCanvas(FigureCanvas):
 #        self.draw()
         
     def imshow(self, array, arrayMin, arrayMax):
-        self.imageObject = self.subplot.imshow(array, vmin = 0, vmax = arrayMax, cmap=self.cmap, origin='lower')
-        # self.imageObject = self.subplot.imshow(array, cmap=self.cmap, origin='lower', norm = mcolors.TwoSlopeNorm(vmin=0, vcenter=25000, vmax=2000000))
-        # self.imageObject = self.subplot.imshow(array, cmap=my_cmap, origin='lower', norm = mcolors.TwoSlopeNorm(vmin=0, vcenter=500000, vmax=2000000))
+        self.imageObject = self.subplot.imshow(array, vmin = arrayMin, vmax = arrayMax, cmap=self.cmap, origin='lower')
         self.draw()
 
     def contour(self, array, levels):
@@ -626,11 +631,10 @@ class SrhEdik36(QtWidgets.QMainWindow):#MainWindow):
             self.showImage()
             
     def onTypeOfPlot(self, index):
-        pass
-        # self.indexOfPlotType = index
-        # if (self.imageUpdate):
-        #     self.buildImage()
-        #     self.showImage()
+        self.indexOfPlotType = index
+        if (self.imageUpdate):
+            self.buildImage()
+            self.showImage()
 
     def onBinsChanged(self, value):
         self.bins = value
@@ -1284,7 +1288,7 @@ class SrhEdik36(QtWidgets.QMainWindow):#MainWindow):
         self.typeOfPlot.addItem('Image mean')
         
         self.binsSpin = QtWidgets.QSpinBox (self, prefix = 'bins ')
-        self.binsSpin.setRange(0.,10000.)
+        self.binsSpin.setRange(0,10000)
         self.binsSpin.valueChanged.connect(self.onBinsChanged)
         self.binsSpin.setValue(self.bins)
         self.binsSpin.setStyle(CustomStyle())
@@ -1531,8 +1535,8 @@ class SrhEdik36(QtWidgets.QMainWindow):#MainWindow):
         self.srhWidget.layout.addWidget(self.rcpTextBox,1,1)
         self.srhWidget.layout.addWidget(self.lcpCanvas,4,0)
         self.srhWidget.layout.addWidget(self.rcpCanvas,4,1)
-        # self.srhWidget.layout.addWidget(self.lcpMaxCanvas,14,0,5,1)
-        # self.srhWidget.layout.addWidget(self.rcpMaxCanvas,14,1,5,1)
+        self.srhWidget.layout.addWidget(self.lcpMaxCanvas,14,0,5,1)
+        self.srhWidget.layout.addWidget(self.rcpMaxCanvas,14,1,5,1)
         self.srhWidget.setLayout(self.srhWidget.layout)
         
         self.casaWidget= QtWidgets.QWidget()
@@ -1693,8 +1697,8 @@ class SrhEdik36(QtWidgets.QMainWindow):#MainWindow):
         self.tab10.setLayout(self.tab10.layout)
         
         
-        self.lcpCanvas.setMinimumSize(675,675)
-        self.rcpCanvas.setMinimumSize(675,675)
+        self.lcpCanvas.setMinimumSize(500,500)
+        self.rcpCanvas.setMinimumSize(500,500)
         self.casaLeftCanvas.setMinimumSize(500,500)
         self.casaRightCanvas.setMinimumSize(500,500)
         layout.addWidget(self.tabs,0,0,1,2)
@@ -1799,7 +1803,7 @@ class SrhEdik36(QtWidgets.QMainWindow):#MainWindow):
         
         self.imageUpdate = True
         self.qSun = NP.zeros((self.uvSize//2, self.uvSize//2))
-        sunRadius = 16 * 60 / (self.arcsecPerPixel*2)
+        sunRadius = coordinates.sun.angular_radius(self.srhFits.dateObs).to_value() / (self.arcsecPerPixel*2)
         for i in range(self.uvSize//2):
             x = i - self.uvSize/4
             for j in range(self.uvSize//2):
@@ -1841,7 +1845,7 @@ class SrhEdik36(QtWidgets.QMainWindow):#MainWindow):
         self.timeList.clear()
         for tim in self.srhFits.freqTime[0,:]:
             fTime = QtCore.QTime(0,0)
-            fTime = fTime.addMSecs(tim * 1000)
+            fTime = fTime.addMSecs(int(tim) * 1000)
             self.timeList.addItem(fTime.toString('hh:mm:ss'))
             
         self.fitsIsOpen = True
@@ -2020,4 +2024,4 @@ if not application:
 phaseEdit36 = SrhEdik36();
 phaseEdit36.setWindowTitle('SRH editor')
 phaseEdit36.show();
-sys.exit(application.exec_());
+#sys.exit(application.exec_());
