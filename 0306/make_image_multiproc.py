@@ -1,90 +1,52 @@
-import srhdata
 import os
-import multiprocessing
 from multiprocessing import Process
-import logging
-
-os.system("tracker3 daemon -k")
-os.system("tracker3 daemon --list-miners-running")
-
-multiprocessing.log_to_stderr()
-logger = multiprocessing.get_logger()
-logger.setLevel(logging.INFO)
+from multiprocessing import Pool
+from synthesis_utils import GlobaMultiSynth
 
 ###### Для заполнения ######
 observation_range = '0306'
-path_to_calib_tables = 'path'
+path_to_calib_tables = '/home/dmitry/Documents/calib_tables/2024/240514 - 0306 - 02-02-03.json'
 directory_of_data = 'data'
 directory_of_result = 'results'
 flags_freq = []
-number_of_clean_iter = 350
+number_of_clean_iter = 100000
+threshold = 400000
 ######                ######
 
+GlobaMultiSynth = GlobaMultiSynth()
+GlobaMultiSynth.start_procedures()
+
+list_of_freqs = GlobaMultiSynth.indicate_observation_range(observation_range)
+GlobaMultiSynth.create_places(directory_of_result, list_of_freqs)
 files = sorted(os.listdir(directory_of_data))
 print(f'Список файлов: {files}')
 
-if observation_range == '0612':
-    list_of_freqs = [5800, 6200, 6600, 7000, 7400, 7800, 8200, 8600, 9000, 9400, 9800, 10200, 10600, 11000, 11400, 11800]
-elif observation_range == '0306':
-    list_of_freqs = [2800, 3000, 3200, 3400, 3600, 3800, 4000, 4200, 4400, 4600, 4800, 5000, 5200, 5400, 5600, 5800]
-elif observation_range == '1224':
-    list_of_freqs = [12000, 12800, 13600, 14400, 15200, 16000, 16800, 17600, 18400, 19200, 20000, 20800, 21600, 22400, 23200, 24000]
+# if __name__ == '__main__':
+#     procs = []
 
-try:
-    os.mkdir(f'{directory_of_result}')
-    for fq in list_of_freqs:
-        os.mkdir(f'{directory_of_result}/{fq}')
-    print('Папка для сохранения результатов создана')
-except:
-    print('Папка для сохранения результатов уже существует')
+#     for index, file in enumerate(files):
+#         for freq in list_of_freqs:
+#             # Создаем процесс для каждого файла и частоты
+#             proc = Process(target=GlobaMultiSynth.image_maker, args=(file, freq, flags_freq, path_to_calib_tables, directory_of_data, directory_of_result, number_of_clean_iter, threshold))
+#             procs.append(proc)
+#             proc.start()
 
+#     for proc in procs:
+#         proc.join()
 
-def image_maker(file_of_data):
-    """
-    Мультипроцессинговая функция по созданию радиоизображений
-    """
-    for freq in range(0, 16):
-        
-        for scan in range(0, 20):
-            
-            if list_of_freqs[freq] in flags_freq:
-                pass
-            
-            else:
-                proc_id = os.getpid()
-                print(f'{file_of_data} in process id: {proc_id}')
-    
-                (srhdata.open(f'{directory_of_data}/{file_of_data}')).makeImage(
-                    path = f'./{directory_of_result}/{list_of_freqs[freq]}', 
-                    calibtable = path_to_calib_tables, 
-                    remove_tables = True, 
-                    frequency = freq, 
-                    scan = scan, 
-                    average = 0, 
-                    compress_image = False, 
-                    RL = True, 
-                    clean_disk = True, 
-                    calibrate = False, 
-                    cell = 2.45, 
-                    imsize = 1024, 
-                    niter = number_of_clean_iter, 
-                    threshold = 35000, 
-                    stokes = 'RRLL'
-                    )
- 
+#     GlobaMultiSynth.finish_procedures(directory_of_result, list_of_freqs)
+
 if __name__ == '__main__':
-    
-    procs = []
-    
-    for index, file in enumerate(files):
-        proc = Process(target=image_maker, args=(file,))
-        procs.append(proc)
-        proc.start()
-    
-    for proc in procs:
-        proc.join()
-        
-    os.system("tracker3 daemon -s")
-    os.system("rm -rf casa*.log")
-    for fq in list_of_freqs:
-        os.system(f"rm -rf {directory_of_result}/{fq}/*_mask")
+    # Определяем количество одновременно работающих процессов
+    max_processes = 4  # Ограничим до 4 процессов
+
+    # Создаем пул с ограниченным числом процессов
+    with Pool(processes=max_processes) as pool:
+        # Генерируем список задач для обработки: каждый файл, частота и аргументы функции
+        tasks = [(file, index, flags_freq, path_to_calib_tables, directory_of_data, directory_of_result, number_of_clean_iter, threshold) for file in files for index, freq in enumerate(list_of_freqs)]
+        print(tasks)
+
+        # Запускаем процессы, распределяя задачи по пулу
+        pool.starmap(GlobaMultiSynth.image_maker, tasks)
+
+    GlobaMultiSynth.finish_procedures(directory_of_result, list_of_freqs)
