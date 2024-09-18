@@ -42,12 +42,12 @@ class GlobaMultiSynth():
         elif observation_range == '1224':
             return self.list_of_freqs_1224
 
-    def image_maker(self, file_of_data, freq, flags_freq, path_to_calib_tables, directory_of_data, directory_of_result, number_of_clean_iter, threshold):
+    def image_maker(self, file_of_data, freq, list_of_freqs, flags_freq, path_to_calib_tables, directory_of_data, directory_of_result, number_of_clean_iter, threshold):
         """
         Мультипроцессинговая функция по созданию радиоизображений для конкретной частоты
         """
         for scan in range(0, 20):
-            if freq in flags_freq:
+            if list_of_freqs[freq] in flags_freq:
                 pass
             else:
                 proc_id = os.getpid()

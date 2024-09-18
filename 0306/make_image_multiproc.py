@@ -38,15 +38,15 @@ print(f'Список файлов: {files}')
 
 if __name__ == '__main__':
     # Определяем количество одновременно работающих процессов
-    max_processes = 4  # Ограничим до 4 процессов
+    max_processes = 1  # Ограничим до 4 процессов
 
     # Создаем пул с ограниченным числом процессов
     with Pool(processes=max_processes) as pool:
         # Генерируем список задач для обработки: каждый файл, частота и аргументы функции
-        tasks = [(file, index, flags_freq, path_to_calib_tables, directory_of_data, directory_of_result, number_of_clean_iter, threshold) for file in files for index, freq in enumerate(list_of_freqs)]
+        tasks = [(file, freq, list_of_freqs, flags_freq, path_to_calib_tables, directory_of_data, directory_of_result, number_of_clean_iter, threshold) for file in files for freq in range(0, 16)]
         print(tasks)
 
         # Запускаем процессы, распределяя задачи по пулу
         pool.starmap(GlobaMultiSynth.image_maker, tasks)
-
-    GlobaMultiSynth.finish_procedures(directory_of_result, list_of_freqs)
+        
+        GlobaMultiSynth.finish_procedures(directory_of_result, list_of_freqs)
