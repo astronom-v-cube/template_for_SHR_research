@@ -187,9 +187,6 @@ class SrhFitsFile():
                 self.flags_ew = NP.array((), dtype = int)
                 self.flags_s = NP.array((), dtype = int)
                 
-                self.fluxLcp = NP.zeros(self.freqListLength)
-                self.fluxRcp = NP.zeros(self.freqListLength)
-                
                 x_size = (self.baselines-1)*2 + self.antNumberEW + self.antNumberS
                 self.x_ini_lcp = NP.full((self.freqListLength, x_size*2+2), NP.append(NP.concatenate((NP.ones(x_size+1), NP.zeros(x_size))),1))
                 self.x_ini_rcp = NP.full((self.freqListLength, x_size*2+2), NP.append(NP.concatenate((NP.ones(x_size+1), NP.zeros(x_size))),1))
@@ -209,6 +206,10 @@ class SrhFitsFile():
         if len(fitsNames) > 1:
             for fitsName in fitsNames[1:]:
                 self.append(fitsName, flux_norm)
+                
+        self.fluxLcp = NP.zeros((self.freqListLength, self.dataLength))
+        self.fluxRcp = NP.zeros((self.freqListLength, self.dataLength))
+        
         if flux_norm and self.corr_amp_exist:
             self.normalizeFlux()
             self.beam()
@@ -315,20 +316,19 @@ class SrhFitsFile():
         ampFluxRcp = NP.mean(self.ampRcp, axis = 2)
         ampFluxLcp = NP.mean(self.ampLcp, axis = 2)
         
-        for ff in range(self.freqListLength):
-            ampFluxRcp[ff,:] -= fluxZerosRcp[ff]
-            ampFluxRcp[ff,:] *= fluxNormRcp[ff] 
-            ampFluxLcp[ff,:] -= fluxZerosLcp[ff]
-            ampFluxLcp[ff,:] *= fluxNormLcp[ff] 
-            
-            self.fluxLcp[ff] = NP.mean(ampFluxLcp[ff])
-            self.fluxRcp[ff] = NP.mean(ampFluxRcp[ff])
-            
-            self.visLcp[ff,:,:] *= NP.mean(self.fluxLcp[ff])
-            self.visRcp[ff,:,:] *= NP.mean(self.fluxRcp[ff])
-            
-            self.visLcp[ff,:,:] *= 2 # flux is divided by 2 for R and L
-            self.visRcp[ff,:,:] *= 2
+        ampFluxRcp -= fluxZerosRcp[:, None]
+        ampFluxRcp *= fluxNormRcp[:, None] 
+        ampFluxLcp -= fluxZerosLcp[:, None]
+        ampFluxLcp *= fluxNormLcp[:, None] 
+
+        self.fluxLcp = ampFluxLcp
+        self.fluxRcp = ampFluxRcp
+        
+        self.visLcp *= self.fluxLcp[:, :, None]
+        self.visRcp *= self.fluxRcp[:, :, None]
+        
+        self.visLcp *= 2 # flux is divided by 2 for R and L
+        self.visRcp *= 2
         
         self.flux_calibrated = True
             
